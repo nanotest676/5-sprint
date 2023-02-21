@@ -1,67 +1,69 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client
 
-from posts.models import Group, Post
+from ..models import Post, Group, User
 
 User = get_user_model()
 
 
-class TaskURLTests(TestCase):
+class PostURLTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.user = User.objects.create(username="NoName")
+        cls.group = Group.objects.create(
+            title='Тестовый заголовок',
+            text='Тестовый текст',
+            slug='test-slug'
+        )
+
     def setUp(self):
         # Создаем неавторизованный клиент
         self.guest_client = Client()
         # Создаем пользователя
-        self.user = User.objects.create_user(username='HasNoName')
-        # Создаем второй клиент
         self.authorized_client = Client()
         # Авторизуем пользователя
-        self.authorized_client.force_login(self.user)
+        self.authorized_client.force_login(PostURLTests.user)
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        Group.objects.create(
-            title='Тестовый заголовок',
-            description='Тестовый текст',
-            slug='test-slug'
+    def test_urls_uses_correct_template(cls):
+        """URL-адрес использует соответствующий шаблон."""
+        # Шаблоны по адресам
+        cls.templates_url_names = {
+            "": "posts/index.html",
+            f"/group/{cls.group.slug}/": "posts/group_progect.html",
+            f"/profile/{cls.user.username}/": "posts/profile.html",
+            f"/posts/{cls.post.id}/": "posts/post_detail.html",
+            f"/posts/{cls.post.id}/edit/": "posts/create_post.html",
+            "/create/": "posts/post_create.html",
+        }
+
+        cls.post_create = Post.objects.create(
+            author=cls.user,
+            text="Тестовая пост",
         )
 
-        Post.objects.create(
-            text='Тестовый заголовок',
-            id=81,
-            author=User.objects.create_user(username='HasNoName')
-        )
+        cls.templates = [
+            "/",
+            f"/group/{cls.group.slug}/",
+            f"/profile/{cls.user}/",
+            f"/posts/{cls.post.id}/",
+        ]
 
-    def setUp(self):
-        self.guest_client = Client()
+    def test_urls_exists_at_desired_location(self):
+        for adress in self.templates:
+            with self.subTest(adress):
+                response = self.guest_client.get(adress)
+                self.assertEqual(response.status_code, 200)
 
-    def test_home_url_exists_at_desired_location(self):
-        """Страница / доступна любому пользователю."""
-        response = self.guest_client.get("")
+    def test_posts_post_id_edit_url_exists_at_author(self):
+        """Страница /posts/post_id/edit/ доступна только автору."""
+        self.user = User.objects.get(username=self.user)
+        self.authorized_client = Client()
+        self.authorized_client.force_login(PostURLTests.user)
+        response = self.authorized_client.get(f"/posts/{self.post.id}/edit/")
         self.assertEqual(response.status_code, 200)
 
-    def test_task_added_url_exists_at_desired_location(self):
-        """Страница /group/test-slug/ доступна любому пользователю."""
-        response = self.guest_client.get('/group/test-slug/')
-        self.assertEqual(response.status_code, 200)
-
-    def test_home_url_exists_at_desired_location(self):
-        """Страница profile/<str:username> доступна любому пользователю."""
-        response = self.guest_client.get('profile/<str:username>')
-        self.assertEqual(response.status_code, 200)
-
-    def test_home_url_exists_at_desired_location(self):
-        """Страница posts/<int:post_id>/ доступна любому пользователю."""
-        response = self.guest_client.get('posts/81/')
-        self.assertEqual(response.status_code, 404)
-
-    def test_task_detail_url_exists_at_desired_location_authorized(self):
-        """Страница create/ доступна авторизованному пользователю."""
-        response = self.authorized_client.get('create/')
-        self.assertEqual(response.status_code, 200)
-
-    def test_task_detail_url_exists_at_desired_location_authorized(self):
-        """Страница posts/<int:post_id>/edit/
-        доступна авторизованному пользователю."""
-        response = self.authorized_client.get('/')
-        self.assertEqual(response.status_code, 200)
+    def test_create_url_redirect_anonymous_on_auth_login(self):
+        """Страница /create/ доступна авторизованному пользователю."""
+        response = self.guest_client.get("/create/", follow=True)
+        self.assertRedirects(response, "/auth/login/?next=/create/")
